@@ -54,7 +54,7 @@ const icons={hunger:loadImage("hunger.png"),cleanliness:loadImage("cleanliness.p
              happiness:loadImage("happiness.png"),sleepiness:loadImage("sleepiness.png")};
 
 // Music (persist mute in localStorage)
-let music=new Audio("assets/backgroundmusic.mp3");
+let music=new Audio("assets/backgroundmusic.MP3");
 music.loop=true; music.volume=0.5;
 let muted=localStorage.getItem("music_muted")==="true";
 function ensureMusic(){ if(!muted){ music.play().catch(()=>{}); } }
