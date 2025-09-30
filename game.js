@@ -38,17 +38,8 @@ function pointInPoly(x,y,poly){
 }
 function loadImage(name){ const i=new Image(); i.src="assets/"+name; return i; }
 
-// Backgrounds
-const backgrounds = [
-  loadImage("background1.png"),
-  loadImage("background2.png"),
-  loadImage("background3.png"),
-  loadImage("background4.png"),
-  loadImage("background5.png"),
-];
-let bgIndex = 0;
-let bgTimer = 0;
-const bgInterval = 2.2; // seconds
+// Assets
+const bg=loadImage("background.png");
 
 // Walking animation frames (auto-scaled on draw)
 const walkFrames = [
@@ -129,7 +120,7 @@ class Mammoth{
     // Animation
     this.animIndex = 0;
     this.animTimer = 0;
-    this.animFps   = 8;
+    this.animFps   = 8;  // speed of leg cycle
   }
   setStageFromAge(){
     const t=this.age; let s="BABY";
@@ -141,7 +132,7 @@ class Mammoth{
     }
   }
   feed(){
-    if(this.state==="DEAD"||this.state==="SLEEP")return;
+    if(this.state==="DEAD"||this.state==="SLEEP")return; // no feeding while asleep/dead
     if(this.hunger>=100){ this.energy=clamp(this.energy-20); }
     else{
       this.hunger=clamp(this.hunger+CONFIG.FEED_DELTA);
@@ -185,11 +176,13 @@ class Mammoth{
     if(this.hygiene<=CONFIG.NEGLECT_HYGIENE){ this.neglect+=dt; if(this.neglect>=CONFIG.NEGLECT_SECONDS_TO_DEATH) this.state="DEAD"; }
     else this.neglect=0;
 
+    // Horizontal idle walk only when walking/eating (never while asleep)
     if(this.state==="WALK"||this.state==="EAT"){
       const nx=this.x+this.dir*80*dt, ny=this.y;
       if(pointInPoly(nx,ny,CONFIG.POLY)) this.x=nx; else this.dir*=-1;
     }
 
+    // Advance leg animation whenever moving states
     if(this.state==="WALK" || this.state==="CHASE" || this.state==="RETURN"){
       this.animTimer += dt;
       const frameTime = 1 / this.animFps;
@@ -211,7 +204,7 @@ class Mammoth{
     else if((this.state==="WALK"||this.state==="CHASE"||this.state==="RETURN") && walkFrames.length) img = walkFrames[this.animIndex];
     else img = mammothImg;
 
-    const w=160*this.scale, h=120*this.scale;
+    const w=160*this.scale, h=120*this.scale; // destination size = consistent scaling
     ctx.save();
     if(this.state!=="DEAD" && this.dir<0){ ctx.scale(-1,1); ctx.drawImage(img,-this.x-w/2,this.y-h,w,h); }
     else{ ctx.drawImage(img,this.x-w/2,this.y-h,w,h); }
@@ -228,9 +221,39 @@ let clickableRects={};
 let lastMouse=null;
 let feedTarget=null;
 
-// Save/Load
-function saveGame(){ /* unchanged */ }
-function loadGame(){ /* unchanged from last version */ }
+// Save/Load (dead flag persisted)
+function saveGame(){
+  const state={
+    ts: Date.now()/1000,
+    hunger:mammoth.hunger, fun:mammoth.fun, hygiene:mammoth.hygiene, energy:mammoth.energy,
+    age:mammoth.age, poop_pressure:mammoth.poopPressure, stage:mammoth.stage,
+    poos: poos.slice(0,CONFIG.MAX_POOPS).map(p=>({x:p.x,y:p.y})),
+    music_muted: muted,
+    dead: (mammoth.state==="DEAD")
+  };
+  localStorage.setItem("mammoth_save", JSON.stringify(state));
+}
+function loadGame(){
+  const raw=localStorage.getItem("mammoth_save"); if(!raw) return;
+  try{
+    const s=JSON.parse(raw);
+    if(s.dead===true){ localStorage.removeItem("mammoth_save"); return; }
+    const now=Date.now()/1000, elapsed=Math.max(0, now-(s.ts||now));
+    mammoth.hunger = s.hunger ?? mammoth.hunger;
+    mammoth.fun    = s.fun    ?? mammoth.fun;
+    mammoth.hygiene= s.hygiene?? mammoth.hygiene;
+    mammoth.energy = s.energy ?? mammoth.energy;
+    mammoth.age    = (s.age||0) + elapsed*0.35;
+    mammoth.poopPressure = (s.poop_pressure||0) + elapsed*0.05;
+    mammoth.setStageFromAge();
+    poos = (s.poos||[]).slice(0,CONFIG.MAX_POOPS).map(p=>new Poo(
+      Math.max(20,Math.min(CONFIG.WIDTH-20,p.x)),
+      Math.max(20,Math.min(CONFIG.HEIGHT-20,p.y))
+    ));
+    muted = !!s.music_muted;
+    if(muted) music.pause(); else tryPlayMusic();
+  }catch(e){}
+}
 loadGame();
 window.addEventListener("beforeunload", saveGame);
 
@@ -245,43 +268,116 @@ function drawHud(){
   const slotW=120, barW=80, barH=8;
   const startX=(CONFIG.WIDTH-(slotW*4-(slotW-barW)))/2;
   const yBase=CONFIG.HEIGHT-10;
-
   stats.forEach(([n,v],i)=>{
     const x=startX+i*slotW;
-    // icon
     ctx.drawImage(icons[n], x+(barW/2)-20, yBase-40, 40, 40);
-    // bar frame
-    ctx.strokeStyle="#1e1e1e";
-    ctx.strokeRect(x, yBase-50, barW, barH);
-    // bar fill
-    const pct = Math.max(0, Math.min(100, v)) / 100;
-    ctx.fillStyle="#c00000";
-    ctx.fillRect(x, yBase-50, Math.floor(barW*pct), barH);
+    ctx.strokeStyle="#1e1e1e"; ctx.strokeRect(x,yBase-50,barW,barH);
+    ctx.fillStyle="#c00000"; ctx.fillRect(x,yBase-50, Math.floor(barW*(Math.max(0,Math.min(100,v))/100)), barH);
   });
 }
 
-// HUD / Share / Dead Overlay remain unchanged ...
+// Share popup
+function drawShare(){
+  ctx.fillStyle="rgba(0,0,0,0.62)"; ctx.fillRect(0,0,CONFIG.WIDTH,CONFIG.HEIGHT);
+  const w=520,h=300,x=(CONFIG.WIDTH-w)/2,y=(CONFIG.HEIGHT-h)/2;
+  ctx.fillStyle="#e6e6e6"; ctx.fillRect(x,y,w,h);
+  ctx.strokeStyle="#141414"; ctx.lineWidth=3; ctx.strokeRect(x,y,w,h);
+  ctx.fillStyle="#0a0a0a"; ctx.font="28px system-ui"; ctx.textAlign="center";
+  ctx.fillText("Nice! You've been playing for a while.", CONFIG.WIDTH/2, y+54);
+  ctx.fillText("Share your Mammobit adventure?", CONFIG.WIDTH/2, y+54+34);
+  const logoSize=86; const lx=CONFIG.WIDTH/2-logoSize/2, ly=y+h/2-logoSize/2+10;
+  ctx.drawImage(xlogo, lx, ly, logoSize, logoSize);
+  const textY=ly+logoSize+24;
+  ctx.fillStyle="#1e50c8"; ctx.font="20px system-ui"; ctx.fillText("Share on X", CONFIG.WIDTH/2, textY);
+  ctx.fillStyle="#444"; ctx.fillText("Press ESC to close", CONFIG.WIDTH/2, y+h-24);
+  clickableRects.logo={x:lx,y:ly,w:logoSize,h:logoSize};
+  const tw=120, th=26; clickableRects.text={x:CONFIG.WIDTH/2-tw/2,y:textY-20,w:tw,h:th};
+}
+function rectHit(r,mx,my){ return mx>=r.x&&mx<=r.x+r.w&&my>=r.y&&my<=r.y+r.h; }
+function openShare(){
+  const text=encodeURIComponent("I've played with my Mammobit today! - Have you taken care of yours? https://mammobits.com 🐘❄️");
+  window.open("https://twitter.com/intent/tweet?text="+text, "_blank");
+}
 
-// Input listeners remain unchanged ...
+// Dead overlay
+function drawDeadOverlay(){
+  ctx.fillStyle="rgba(0,0,0,0.65)";
+  ctx.fillRect(0,0,CONFIG.WIDTH,CONFIG.HEIGHT);
+  ctx.fillStyle="#fff";
+  ctx.font="24px system-ui";
+  ctx.textAlign="center";
+  ctx.fillText("Your Mammoth has passed away.", CONFIG.WIDTH/2, CONFIG.HEIGHT/2-10);
+  ctx.fillText("Press R to restart", CONFIG.WIDTH/2, CONFIG.HEIGHT/2+24);
+}
+
+// Input
+window.addEventListener("keydown", e=>{
+  // restart when dead
+  if (mammoth && mammoth.state === "DEAD") {
+    if (e.key.toLowerCase() === "r") { restartGame(); }
+    return;
+  }
+
+  if(shareOpen){
+    if(e.key==="Escape"||e.key==="Esc") shareOpen=false;
+    if(e.key.toLowerCase()==="y"){ openShare(); shareOpen=false; }
+    return;
+  }
+  if(e.key.toLowerCase()==="m"){
+    muted=!muted; localStorage.setItem("music_muted", String(muted));
+    if(muted) music.pause(); else tryPlayMusic();
+  }
+  if(e.key.toLowerCase()==="f"){
+    // Block feeding while asleep
+    if(mammoth.state==="SLEEP") return;
+    const mp=lastMouse||{x:mammoth.x,y:mammoth.y};
+    const tx=pointInPoly(mp.x,mp.y,CONFIG.POLY)?mp.x:mammoth.x;
+    const ty=pointInPoly(mp.x,mp.y,CONFIG.POLY)?mp.y:mammoth.y;
+    vines=[new Vine(tx,ty)]; feedTarget={x:tx,y:ty};
+  }
+  if(e.key.toLowerCase()==="p"){
+    if(mammoth.startChase()){
+      const mp=lastMouse||{x:mammoth.x,y:mammoth.y};
+      const sideY=mp.y;
+      const startX=(mp.x<CONFIG.WIDTH/2)?CONFIG.WIDTH+40:-40;
+      ballTarget={x:pointInPoly(mp.x,mp.y,CONFIG.POLY)?mp.x:mammoth.x, y:mp.y};
+      ball=new Ball(startX,sideY,ballTarget.x,ballTarget.y,280,60);
+    }
+  }
+  if(e.key.toLowerCase()==="c"){
+    if(poos.length){
+      let k=0,best=1e9;
+      for(let i=0;i<poos.length;i++){
+        const d=len(poos[i].x-mammoth.x, poos[i].y-mammoth.y);
+        if(d<best){ best=d; k=i; }
+      }
+      poos.splice(k,1);
+      mammoth.hygiene=clamp(mammoth.hygiene+CONFIG.CLEAN_DELTA);
+    }
+  }
+});
+canvas.addEventListener("mousemove", e=>{
+  const r=canvas.getBoundingClientRect();
+  lastMouse={x:e.clientX-r.left, y:e.clientY-r.top};
+});
+canvas.addEventListener("click", e=>{
+  const r=canvas.getBoundingClientRect();
+  const mx=e.clientX-r.left, my=e.clientY-r.top;
+  if(shareOpen){
+    if(rectHit(clickableRects.logo,mx,my)||rectHit(clickableRects.text,mx,my)){ openShare(); shareOpen=false; }
+    else shareOpen=false;
+    return;
+  }
+  poos=poos.filter(p=>{ if(p.isClicked(mx,my)){ mammoth.hygiene=clamp(mammoth.hygiene+CONFIG.CLEAN_DELTA); return false; } return true; });
+});
 
 // Loop
 let last=performance.now();
 function tick(now){
   const dt=(now-last)/1000; last=now;
-
-  // --- background cycling ---
-  bgTimer += dt;
-  if(bgTimer >= bgInterval){
-    bgTimer -= bgInterval;
-    bgIndex = (bgIndex+1) % backgrounds.length;
-  }
-  const currentBg = backgrounds[bgIndex];
   ctx.clearRect(0,0,CONFIG.WIDTH,CONFIG.HEIGHT);
-  ctx.drawImage(currentBg,0,0,CONFIG.WIDTH,CONFIG.HEIGHT);
+  ctx.drawImage(bg,0,0,CONFIG.WIDTH,CONFIG.HEIGHT);
 
-  // rest of tick() unchanged (mammoth update, poos, ball, snow, draw, etc.)
-  // ... (same as the version I gave you before, just background replaced with currentBg)
-  
   if(!shareOpen){
     mammoth.update(dt,poos.length);
 
@@ -294,7 +390,11 @@ function tick(now){
 
     for(const v of vines) v.update(dt);
     if(vines.length && vines[0].reached){
-      if(feedTarget && ["CHASE","RETURN","DEAD","SLEEP"].indexOf(mammoth.state)===-1){
+      // Prevent movement toward food while sleeping / chasing / returning / dead
+      if(
+        feedTarget &&
+        ["CHASE","RETURN","DEAD","SLEEP"].indexOf(mammoth.state)===-1
+      ){
         const dx=feedTarget.x-mammoth.x, dy=feedTarget.y-mammoth.y, d=len(dx,dy);
         if(d>6){
           const [nx,ny]=norm(dx,dy);
@@ -302,7 +402,10 @@ function tick(now){
           if(pointInPoly(nxp,nyp,CONFIG.POLY)){ mammoth.x=nxp; mammoth.y=nyp; }
           mammoth.dir=dx>=0?1:-1;
         }else{ mammoth.feed(); vines.length=0; feedTarget=null; }
-      }else{ mammoth.feed(); vines.length=0; feedTarget=null; }
+      }else{
+        // Try to feed (will be ignored in SLEEP by feed()); then clear vines anyway
+        mammoth.feed(); vines.length=0; feedTarget=null;
+      }
     }
 
     if(ball){
