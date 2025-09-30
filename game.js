@@ -41,7 +41,7 @@ function loadImage(name){ const i=new Image(); i.src="assets/"+name; return i; }
 // Assets
 const bg=loadImage("background.png");
 
-// NEW: walking animation frames
+// Walking animation frames (auto-scaled on draw)
 const walkFrames = [
   loadImage("mammoth1.png"),
   loadImage("mammoth2.png"),
@@ -49,7 +49,7 @@ const walkFrames = [
   loadImage("mammoth4.png"),
 ];
 
-// keep existing single images as-is
+// Still images
 const mammothImg=loadImage("mammoth.png");
 const deadImg=loadImage("dead.png");
 const sleepImg=loadImage("sleepingmammoth.png");
@@ -117,10 +117,10 @@ class Mammoth{
     this.state="WALK";
     this.scale=CONFIG.SCALE_BABY;
 
-    // NEW: simple walk animation state
-    this.animIndex = 0;          // which frame of walkFrames
-    this.animTimer = 0;          // time accumulator
-    this.animFps   = 8;          // frames per second while walking
+    // Animation
+    this.animIndex = 0;
+    this.animTimer = 0;
+    this.animFps   = 8;  // speed of leg cycle
   }
   setStageFromAge(){
     const t=this.age; let s="BABY";
@@ -132,7 +132,7 @@ class Mammoth{
     }
   }
   feed(){
-    if(this.state==="DEAD"||this.state==="SLEEP")return;
+    if(this.state==="DEAD"||this.state==="SLEEP")return; // no feeding while asleep/dead
     if(this.hunger>=100){ this.energy=clamp(this.energy-20); }
     else{
       this.hunger=clamp(this.hunger+CONFIG.FEED_DELTA);
@@ -141,33 +141,49 @@ class Mammoth{
       this.poopPressure+=CONFIG.POOP_PRESSURE_PER_FEED;
     }
   }
-  startChase(){ if(this.state==="DEAD"||this.state==="SLEEP")return false;
-    if(this.energy<=CONFIG.OVERPLAY_ENERGY) return false; this.state="CHASE"; return true; }
+  startChase(){
+    if(this.state==="DEAD"||this.state==="SLEEP")return false;
+    if(this.energy<=CONFIG.OVERPLAY_ENERGY) return false;
+    this.state="CHASE"; return true;
+  }
   pickupBall(){ this.state="RETURN"; }
-  deliveredBall(){ if(this.state==="DEAD")return;
-    this.fun=clamp(this.fun+CONFIG.PLAY_FUN_BOOST); this.energy=clamp(this.energy-10); this.state="WALK"; }
+  deliveredBall(){
+    if(this.state==="DEAD")return;
+    this.fun=clamp(this.fun+CONFIG.PLAY_FUN_BOOST);
+    this.energy=clamp(this.energy-10);
+    this.state="WALK";
+  }
   update(dt,numPoops){
     if(this.state==="DEAD")return;
+
     this.age+=dt; this.setStageFromAge();
     if(this.stage==="OLD" && this.stageEnterOldTime!==null){
       const elapsedOld=performance.now()/1000 - this.stageEnterOldTime;
       if(elapsedOld>=60){ this.state="DEAD"; return; }
     }
+
     this.hunger=clamp(this.hunger+CONFIG.HUNGER_RATE*dt);
     this.fun=clamp(this.fun+CONFIG.FUN_DECAY*dt);
     this.hygiene=clamp(this.hygiene+(CONFIG.HYGIENE_DECAY+numPoops*CONFIG.HYGIENE_DECAY_PER_POOP)*dt);
+
     if(this.state==="SLEEP") this.energy=clamp(this.energy+CONFIG.ENERGY_RECOVERY_IDLE*CONFIG.SLEEP_RECOVERY_MULT*dt);
     else if(this.state==="CHASE"||this.state==="RETURN") this.energy=clamp(this.energy+CONFIG.ENERGY_DECAY_PLAY*dt);
     else this.energy=clamp(this.energy+(CONFIG.ENERGY_RECOVERY_IDLE+CONFIG.ENERGY_DECAY_IDLE)*dt);
+
     if(this.energy<CONFIG.SLEEP_ENTER_ENERGY && this.state!=="SLEEP") this.state="SLEEP";
     if(this.state==="SLEEP" && this.energy>=CONFIG.SLEEP_EXIT_ENERGY) this.state="WALK";
+
     if(this.hygiene<=CONFIG.NEGLECT_HYGIENE){ this.neglect+=dt; if(this.neglect>=CONFIG.NEGLECT_SECONDS_TO_DEATH) this.state="DEAD"; }
     else this.neglect=0;
+
+    // Horizontal idle walk only when walking/eating (never while asleep)
     if(this.state==="WALK"||this.state==="EAT"){
       const nx=this.x+this.dir*80*dt, ny=this.y;
       if(pointInPoly(nx,ny,CONFIG.POLY)) this.x=nx; else this.dir*=-1;
+    }
 
-      // NEW: advance walk animation while walking
+    // Advance leg animation whenever moving states
+    if(this.state==="WALK" || this.state==="CHASE" || this.state==="RETURN"){
       this.animTimer += dt;
       const frameTime = 1 / this.animFps;
       while (this.animTimer >= frameTime) {
@@ -175,22 +191,20 @@ class Mammoth{
         this.animIndex = (this.animIndex + 1) % walkFrames.length;
       }
     }else{
-      // not walking: hold a neutral frame so it doesn't flicker
       this.animTimer = 0;
       this.animIndex = 0;
     }
+
     this.poopPressure+=CONFIG.POOP_PRESSURE_PASSIVE*dt;
   }
   draw(){
-    // choose image
     let img;
     if(this.state==="DEAD") img = deadImg;
     else if(this.state==="SLEEP") img = sleepImg;
-    else if(this.state==="WALK" && walkFrames.length) img = walkFrames[this.animIndex];
+    else if((this.state==="WALK"||this.state==="CHASE"||this.state==="RETURN") && walkFrames.length) img = walkFrames[this.animIndex];
     else img = mammothImg;
 
-    // draw at the same destination size as before so any source size is auto-scaled
-    const w=160*this.scale, h=120*this.scale;
+    const w=160*this.scale, h=120*this.scale; // destination size = consistent scaling
     ctx.save();
     if(this.state!=="DEAD" && this.dir<0){ ctx.scale(-1,1); ctx.drawImage(img,-this.x-w/2,this.y-h,w,h); }
     else{ ctx.drawImage(img,this.x-w/2,this.y-h,w,h); }
@@ -314,6 +328,8 @@ window.addEventListener("keydown", e=>{
     if(muted) music.pause(); else tryPlayMusic();
   }
   if(e.key.toLowerCase()==="f"){
+    // Block feeding while asleep
+    if(mammoth.state==="SLEEP") return;
     const mp=lastMouse||{x:mammoth.x,y:mammoth.y};
     const tx=pointInPoly(mp.x,mp.y,CONFIG.POLY)?mp.x:mammoth.x;
     const ty=pointInPoly(mp.x,mp.y,CONFIG.POLY)?mp.y:mammoth.y;
@@ -374,7 +390,11 @@ function tick(now){
 
     for(const v of vines) v.update(dt);
     if(vines.length && vines[0].reached){
-      if(feedTarget && ["CHASE","RETURN","DEAD"].indexOf(mammoth.state)===-1){
+      // Prevent movement toward food while sleeping / chasing / returning / dead
+      if(
+        feedTarget &&
+        ["CHASE","RETURN","DEAD","SLEEP"].indexOf(mammoth.state)===-1
+      ){
         const dx=feedTarget.x-mammoth.x, dy=feedTarget.y-mammoth.y, d=len(dx,dy);
         if(d>6){
           const [nx,ny]=norm(dx,dy);
@@ -382,7 +402,10 @@ function tick(now){
           if(pointInPoly(nxp,nyp,CONFIG.POLY)){ mammoth.x=nxp; mammoth.y=nyp; }
           mammoth.dir=dx>=0?1:-1;
         }else{ mammoth.feed(); vines.length=0; feedTarget=null; }
-      }else{ mammoth.feed(); vines.length=0; feedTarget=null; }
+      }else{
+        // Try to feed (will be ignored in SLEEP by feed()); then clear vines anyway
+        mammoth.feed(); vines.length=0; feedTarget=null;
+      }
     }
 
     if(ball){
@@ -418,10 +441,8 @@ function tick(now){
   mammoth.draw();
   drawHud();
 
-  // dead overlay
   if(mammoth.state==="DEAD") drawDeadOverlay();
 
-  // share popup (one-time)
   shareTimer+=dt;
   if(!shareOpen && !shareShown && shareTimer>=20){ shareOpen=true; shareShown=true; }
   if(shareOpen) drawShare();
