@@ -39,7 +39,16 @@ function pointInPoly(x,y,poly){
 function loadImage(name){ const i=new Image(); i.src="assets/"+name; return i; }
 
 // Assets
-const bg=loadImage("background.png");
+// const bg=loadImage("background.png");   // REMOVE this line
+const backgrounds = [
+  loadImage("background1.png"),
+  loadImage("background2.png"),
+  loadImage("background3.png"),
+  loadImage("background4.png"),
+  loadImage("background5.png"),
+];
+let bgIndex = 0;
+let bgTimer = 0;
 
 // Walking animation frames (auto-scaled on draw)
 const walkFrames = [
@@ -376,7 +385,14 @@ let last=performance.now();
 function tick(now){
   const dt=(now-last)/1000; last=now;
   ctx.clearRect(0,0,CONFIG.WIDTH,CONFIG.HEIGHT);
-  ctx.drawImage(bg,0,0,CONFIG.WIDTH,CONFIG.HEIGHT);
+  
+  // cycle background every 1.1 seconds
+  bgTimer += (now - last) / 1000;
+  if (bgTimer >= 1.1) {
+    bgTimer = 0;
+    bgIndex = (bgIndex + 1) % backgrounds.length;
+  }
+  ctx.drawImage(backgrounds[bgIndex], 0, 0, CONFIG.WIDTH, CONFIG.HEIGHT);
 
   if(!shareOpen){
     mammoth.update(dt,poos.length);
