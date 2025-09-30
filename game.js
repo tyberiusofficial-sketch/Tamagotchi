@@ -54,11 +54,18 @@ const icons={hunger:loadImage("hunger.png"),cleanliness:loadImage("cleanliness.p
              happiness:loadImage("happiness.png"),sleepiness:loadImage("sleepiness.png")};
 
 // Music (persist mute in localStorage)
-let music=new Audio("assets/backgroundmusic.MP3");
-music.loop=true; music.volume=0.5;
-let muted=localStorage.getItem("music_muted")==="true";
-function ensureMusic(){ if(!muted){ music.play().catch(()=>{}); } }
-ensureMusic();
+let music = new Audio("assets/backgroundmusic.MP3");
+music.loop = true;
+music.volume = 0.5;
+
+let muted = localStorage.getItem("music_muted") === "true";
+
+function tryPlayMusic() {
+  if (!muted) music.play().catch(()=>{});
+}
+// start after first user interaction (click/keypress)
+window.addEventListener('pointerdown', tryPlayMusic, { once: true });
+window.addEventListener('keydown',     tryPlayMusic, { once: true });
 
 // Entities
 class Ball {
@@ -258,9 +265,10 @@ window.addEventListener("keydown", e=>{
     if(e.key.toLowerCase()==="y"){ openShare(); shareOpen=false; }
     return;
   }
-  if(e.key.toLowerCase()==="m"){
-    muted = !muted; localStorage.setItem("music_muted", String(muted));
-    if(muted) music.pause(); else ensureMusic();
+  if (e.key.toLowerCase() === "m") {
+    muted = !muted;
+    localStorage.setItem("music_muted", String(muted));
+    if (muted) music.pause(); else tryPlayMusic();
   }
   if(e.key.toLowerCase()==="f"){
     // Feed at mouse position (within polygon), else at mammoth
