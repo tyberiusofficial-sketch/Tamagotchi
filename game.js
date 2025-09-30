@@ -53,7 +53,7 @@ const xlogo=loadImage("xlogo.png");
 const icons={hunger:loadImage("hunger.png"),cleanliness:loadImage("cleanliness.png"),
              happiness:loadImage("happiness.png"),sleepiness:loadImage("sleepiness.png")};
 
-// Music (persist mute in localStorage)
+// Music (persist mute in localStorage) — UPDATED (.MP3 + user-gesture autoplay)
 let music = new Audio("assets/backgroundmusic.MP3");
 music.loop = true;
 music.volume = 0.5;
@@ -63,7 +63,7 @@ let muted = localStorage.getItem("music_muted") === "true";
 function tryPlayMusic() {
   if (!muted) music.play().catch(()=>{});
 }
-// start after first user interaction (click/keypress)
+// start after first user interaction (required by browsers)
 window.addEventListener('pointerdown', tryPlayMusic, { once: true });
 window.addEventListener('keydown',     tryPlayMusic, { once: true });
 
@@ -185,7 +185,8 @@ let vines = [];
 let ball = null;
 let ballTarget = null;
 let snow = Array.from({length:80},()=>[Math.random()*CONFIG.WIDTH, Math.random()*CONFIG.HEIGHT, 20+Math.random()*40]);
-let shareTimer = 0, shareOpen=false;
+// shareShown flag added so it triggers only once
+let shareTimer = 0, shareOpen=false, shareShown=false;
 let clickableRects = {}; // for popup
 
 // Save/Load
@@ -216,7 +217,7 @@ function loadGame(){
       Math.max(20, Math.min(CONFIG.HEIGHT-20, p.y))
     ));
     muted = !!s.music_muted;
-    if(muted) { music.pause(); } else ensureMusic();
+    if(muted) { music.pause(); } else tryPlayMusic();   // UPDATED
   }catch(e){ /* ignore */ }
 }
 loadGame();
@@ -258,17 +259,17 @@ function openShare(){
   window.open("https://twitter.com/intent/tweet?text="+text, "_blank");
 }
 
-// Input
+// Input — UPDATED: ESC robust + M uses tryPlayMusic()
 window.addEventListener("keydown", e=>{
   if(shareOpen){
-    if(e.key==="Escape"){ shareOpen=false; }
-    if(e.key.toLowerCase()==="y"){ openShare(); shareOpen=false; }
+    if (e.key === "Escape" || e.key === "Esc") shareOpen = false;  // UPDATED
+    if (e.key.toLowerCase() === "y") { openShare(); shareOpen = false; }
     return;
   }
-  if (e.key.toLowerCase() === "m") {
+  if(e.key.toLowerCase()==="m"){
     muted = !muted;
     localStorage.setItem("music_muted", String(muted));
-    if (muted) music.pause(); else tryPlayMusic();
+    if (muted) music.pause(); else tryPlayMusic();                 // UPDATED
   }
   if(e.key.toLowerCase()==="f"){
     // Feed at mouse position (within polygon), else at mammoth
@@ -376,7 +377,7 @@ function tick(now){
       const dx=ball.x-mammoth.x, dy=ball.y-mammoth.y;
       const d=len(dx,dy);
       if(mammoth.state==="CHASE"){
-        if(d>CONFIG.PICKUP_DIST||isNaN(CONFIG.PICKUP_DIST)){ // we don't have PICKUP in this CONFIG; fallback 24
+        if(d>CONFIG.PICKUP_DIST||isNaN(CONFIG.PICKUP_DIST)){ // fallback when not set
           const speed=200;
           const [nx,ny]=norm(dx,dy);
           const nxp=mammoth.x+nx*speed*dt, nyp=mammoth.y+ny*speed*dt;
@@ -416,9 +417,9 @@ function tick(now){
   mammoth.draw();
   drawHud();
 
-  // Share
+  // Share — UPDATED: one-time show (shareShown)
   shareTimer += dt;
-  if(!shareOpen && shareTimer>=20) { shareOpen=true; }
+  if(!shareOpen && !shareShown && shareTimer>=20) { shareOpen=true; shareShown=true; }
   if(shareOpen) drawShare();
 
   requestAnimationFrame(tick);
