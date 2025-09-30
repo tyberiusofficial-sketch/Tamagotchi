@@ -234,6 +234,32 @@ function loadGame(){ /* unchanged from last version */ }
 loadGame();
 window.addEventListener("beforeunload", saveGame);
 
+// HUD
+function drawHud(){
+  const stats=[
+    ["hunger",mammoth.hunger],
+    ["cleanliness",mammoth.hygiene],
+    ["happiness",mammoth.fun],
+    ["sleepiness",mammoth.energy],
+  ];
+  const slotW=120, barW=80, barH=8;
+  const startX=(CONFIG.WIDTH-(slotW*4-(slotW-barW)))/2;
+  const yBase=CONFIG.HEIGHT-10;
+
+  stats.forEach(([n,v],i)=>{
+    const x=startX+i*slotW;
+    // icon
+    ctx.drawImage(icons[n], x+(barW/2)-20, yBase-40, 40, 40);
+    // bar frame
+    ctx.strokeStyle="#1e1e1e";
+    ctx.strokeRect(x, yBase-50, barW, barH);
+    // bar fill
+    const pct = Math.max(0, Math.min(100, v)) / 100;
+    ctx.fillStyle="#c00000";
+    ctx.fillRect(x, yBase-50, Math.floor(barW*pct), barH);
+  });
+}
+
 // HUD / Share / Dead Overlay remain unchanged ...
 
 // Input listeners remain unchanged ...
