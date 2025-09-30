@@ -40,6 +40,16 @@ function loadImage(name){ const i=new Image(); i.src="assets/"+name; return i; }
 
 // Assets
 const bg=loadImage("background.png");
+
+// NEW: walking animation frames
+const walkFrames = [
+  loadImage("mammoth1.png"),
+  loadImage("mammoth2.png"),
+  loadImage("mammoth3.png"),
+  loadImage("mammoth4.png"),
+];
+
+// keep existing single images as-is
 const mammothImg=loadImage("mammoth.png");
 const deadImg=loadImage("dead.png");
 const sleepImg=loadImage("sleepingmammoth.png");
@@ -106,6 +116,11 @@ class Mammoth{
     this.age=0; this.stage="BABY"; this.stageEnterOldTime=null;
     this.state="WALK";
     this.scale=CONFIG.SCALE_BABY;
+
+    // NEW: simple walk animation state
+    this.animIndex = 0;          // which frame of walkFrames
+    this.animTimer = 0;          // time accumulator
+    this.animFps   = 8;          // frames per second while walking
   }
   setStageFromAge(){
     const t=this.age; let s="BABY";
@@ -151,11 +166,30 @@ class Mammoth{
     if(this.state==="WALK"||this.state==="EAT"){
       const nx=this.x+this.dir*80*dt, ny=this.y;
       if(pointInPoly(nx,ny,CONFIG.POLY)) this.x=nx; else this.dir*=-1;
+
+      // NEW: advance walk animation while walking
+      this.animTimer += dt;
+      const frameTime = 1 / this.animFps;
+      while (this.animTimer >= frameTime) {
+        this.animTimer -= frameTime;
+        this.animIndex = (this.animIndex + 1) % walkFrames.length;
+      }
+    }else{
+      // not walking: hold a neutral frame so it doesn't flicker
+      this.animTimer = 0;
+      this.animIndex = 0;
     }
     this.poopPressure+=CONFIG.POOP_PRESSURE_PASSIVE*dt;
   }
   draw(){
-    let img = this.state==="DEAD" ? deadImg : (this.state==="SLEEP"? sleepImg : mammothImg);
+    // choose image
+    let img;
+    if(this.state==="DEAD") img = deadImg;
+    else if(this.state==="SLEEP") img = sleepImg;
+    else if(this.state==="WALK" && walkFrames.length) img = walkFrames[this.animIndex];
+    else img = mammothImg;
+
+    // draw at the same destination size as before so any source size is auto-scaled
     const w=160*this.scale, h=120*this.scale;
     ctx.save();
     if(this.state!=="DEAD" && this.dir<0){ ctx.scale(-1,1); ctx.drawImage(img,-this.x-w/2,this.y-h,w,h); }
