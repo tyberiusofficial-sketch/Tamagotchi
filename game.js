@@ -387,7 +387,7 @@ function tick(now){
   ctx.clearRect(0,0,CONFIG.WIDTH,CONFIG.HEIGHT);
   
   // cycle background every 1.1 seconds
-  bgTimer += (now - last) / 1000;
+  bgTimer += dt;
   if (bgTimer >= 1.1) {
     bgTimer = 0;
     bgIndex = (bgIndex + 1) % backgrounds.length;
